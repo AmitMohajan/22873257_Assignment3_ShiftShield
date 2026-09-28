@@ -1,7 +1,9 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from datetime import datetime, timezone
-import uuid
+from supabase import create_client
 import os
 
 # ----------------------------------------------------------
@@ -11,15 +13,24 @@ import os
 #   1. A local development server  (python api/index.py)
 #   2. A Vercel serverless function (api/index.py is auto-detected)
 #
-# In-memory storage is used for Phase 1 testing.
-# Supabase will replace it in Phase 2.
+# Data is stored in Supabase via the server-side secret key.
+# The secret key bypasses RLS and is never exposed to the browser.
 # ----------------------------------------------------------
+
+# Read credentials from environment (loaded from .env locally, Vercel dashboard in production)
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY")
+
+if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+    raise RuntimeError(
+        "Missing SUPABASE_URL or SUPABASE_SECRET_KEY. "
+        "Set them in your .env file (local) or Vercel environment variables (production)."
+    )
+
+supabase = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests during local development
-
-# Temporary in-memory storage (Phase 1 only)
-submissions_store = []
 
 
 # ── Health Check ──────────────────────────────────────────
@@ -33,7 +44,7 @@ def health():
 @app.route("/api/submit", methods=["POST"])
 def submit():
     """
-    Accepts a complete user submission and stores it.
+    Accepts a complete user submission and stores it in Supabase.
     Expects JSON body:
       {
         "workProfile": { ... },
@@ -41,7 +52,7 @@ def submit():
         "situationDetails": { ... }
       }
     Returns:
-      { "success": true, "id": "<uuid>" }
+      { "success": true, "id": "<uuid>", "total_count": N }
     """
     data = request.get_json(silent=True)
 
@@ -58,32 +69,59 @@ def submit():
     if not data.get("situationDetails") or not isinstance(data["situationDetails"], dict):
         return jsonify({"success": False, "error": "Missing or invalid field: situationDetails."}), 400
 
-    # Create submission record
-    submission_id = str(uuid.uuid4())
+    # Map camelCase frontend keys to snake_case database columns
     record = {
-        "id": submission_id,
         "concern": data["concern"],
         "work_profile": data["workProfile"],
-        "situation_details": data["situationDetails"],
-        "submitted_at": datetime.now(timezone.utc).isoformat()
+        "situation_details": data["situationDetails"]
     }
 
-    # Store in memory (will be replaced by Supabase insert in Phase 2)
-    submissions_store.append(record)
+    # Insert into Supabase
+    try:
+        result = supabase.table("submissions").insert(record).execute()
+        new_id = result.data[0]["id"]
 
-    return jsonify({"success": True, "id": submission_id}), 201
+        # Count total rows to demonstrate persistence
+        count_result = supabase.table("submissions").select("id", count="exact").execute()
+        total = count_result.count
+
+        return jsonify({"success": True, "id": new_id, "total_count": total}), 201
+
+    except Exception as e:
+        print(f"[Supabase error on submit] {e}")
+        return jsonify({
+            "success": False,
+            "error": "Failed to save submission. Please try again."
+        }), 500
 
 
-# ── Retrieve Submissions ──────────────────────────────────
+# ── Retrieve Submissions (local development only) ─────────
 @app.route("/api/submissions", methods=["GET"])
 def get_submissions():
     """
     Returns the most recent submissions (newest first, max 20).
-    Will be replaced by a Supabase query in Phase 2.
+    Only available when ALLOW_SUBMISSIONS_LIST=true is set in the environment.
+    Returns 403 in production to prevent public exposure of stored data.
     """
-    # Return newest first, limit to 20
-    recent = list(reversed(submissions_store[-20:]))
-    return jsonify({"submissions": recent})
+    if os.environ.get("ALLOW_SUBMISSIONS_LIST") != "true":
+        return jsonify({"error": "This endpoint is not available."}), 403
+
+    try:
+        result = (
+            supabase.table("submissions")
+            .select("*")
+            .order("submitted_at", desc=True)
+            .limit(20)
+            .execute()
+        )
+        return jsonify({"submissions": result.data})
+
+    except Exception as e:
+        print(f"[Supabase error on retrieve] {e}")
+        return jsonify({
+            "submissions": [],
+            "error": "Failed to retrieve submissions."
+        }), 500
 
 
 # ── Local development entry point ─────────────────────────

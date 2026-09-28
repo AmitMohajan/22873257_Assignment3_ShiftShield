@@ -1,4 +1,5 @@
 # ShiftShield Python backend dependencies
 flask==3.1.1
 flask-cors==5.0.1
-supabase==2.15.2
+supabase==2.31.0
+python-dotenv==1.1.0
