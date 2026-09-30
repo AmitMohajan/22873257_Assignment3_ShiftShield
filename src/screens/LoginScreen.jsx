@@ -1,10 +1,10 @@
 /**
- * LoginScreen — Simple demonstration login for the MVP
+ * LoginScreen — Authenticates the user via Supabase Auth through the Python backend
  *
  * Props received from App.jsx:
  *   loginData    — { email, password } object
  *   setLoginData — Function to update loginData
- *   onLogin      — Function called on successful login (advances to next step)
+ *   onLogin      — Function called on successful login: (accessToken) => void
  */
 
 import { useState } from 'react'
@@ -15,6 +15,7 @@ import ActionButton from '../components/ActionButton'
 function LoginScreen({ loginData, setLoginData, onLogin }) {
   // Local error state for validation messages
   const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
 
   // Update a field in loginData
   const updateField = (field, value) => {
@@ -24,7 +25,7 @@ function LoginScreen({ loginData, setLoginData, onLogin }) {
   }
 
   // Validate and attempt login
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!loginData.email.includes('@')) {
       setError('Please enter a valid email address.')
       return
@@ -33,13 +34,36 @@ function LoginScreen({ loginData, setLoginData, onLogin }) {
       setError('Password must be at least 6 characters.')
       return
     }
-    // Login successful — advance to next screen
-    onLogin()
+
+    setIsLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: loginData.email,
+          password: loginData.password
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Invalid credentials')
+      }
+
+      const data = await response.json()
+      onLogin(data.accessToken)  // Pass token to App.jsx
+    } catch (err) {
+      setError('Invalid email or password. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   // Allow pressing Enter to submit
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter') handleLogin()
+    if (e.key === 'Enter' && !isLoading) handleLogin()
   }
 
   return (
@@ -72,6 +96,7 @@ function LoginScreen({ loginData, setLoginData, onLogin }) {
             onChange={(val) => updateField('email', val)}
             placeholder="your.email@example.com"
             helperText="Enter your email address."
+            disabled={isLoading}
           />
 
           <FormInput
@@ -81,13 +106,15 @@ function LoginScreen({ loginData, setLoginData, onLogin }) {
             onChange={(val) => updateField('password', val)}
             placeholder="Enter your password"
             helperText="Minimum 6 characters."
+            disabled={isLoading}
           />
 
           <ActionButton
-            label="Sign In"
+            label={isLoading ? 'Signing in...' : 'Sign In'}
             variant="primary"
             onClick={handleLogin}
             fullWidth
+            disabled={isLoading}
           />
         </div>
       </div>

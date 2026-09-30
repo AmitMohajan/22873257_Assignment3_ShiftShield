@@ -12,6 +12,7 @@
  *   onEditStep        — Function to jump to a specific step: (stepNumber) => void
  */
 
+import { useState } from 'react'
 import { Shield, Info, Edit3 } from 'lucide-react'
 import concernOptions from '../data/concernOptions'
 import ActionButton from '../components/ActionButton'
@@ -25,7 +26,8 @@ function ReviewConsentScreen({
   setConsentGiven,
   onGenerate,
   onBack,
-  onEditStep
+  onEditStep,
+  accessToken
 }) {
   // Get the concern title from the options
   const concernOption = concernOptions.find((c) => c.id === concern)
@@ -33,6 +35,37 @@ function ReviewConsentScreen({
 
   // Get readable detail values
   const detailEntries = Object.entries(situationDetails).filter(([_, val]) => val)
+
+  // Submission state
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+
+  // Submit to backend, then advance to snapshot
+  const handleGenerate = async () => {
+    setIsSubmitting(true)
+    setSubmitError('')
+
+    try {
+      const response = await fetch('/api/submit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ workProfile, concern, situationDetails })
+      })
+
+      if (!response.ok) {
+        throw new Error('Submit failed')
+      }
+
+      onGenerate()
+    } catch (err) {
+      setSubmitError('Unable to save your submission. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
     <div className="screen">
@@ -129,18 +162,26 @@ function ReviewConsentScreen({
       <div className="review-privacy-note">
         <Info size={16} />
         <span>
-          Your information is held temporarily in your browser and is not sent to
-          or stored on any server. Closing this page will clear your data. This
-          application does not use cookies, analytics, or tracking.
+          Your Work Profile is stored in Supabase so it can be restored when you
+          sign in again. When you generate a Situation Snapshot, the information
+          you submit is also saved to Supabase and linked to your authenticated
+          user account.
         </span>
       </div>
+
+      {/* Submission error */}
+      {submitError && (
+        <div className="login-error" style={{ marginTop: '1rem' }}>
+          <span>{submitError}</span>
+        </div>
+      )}
 
       {/* Navigation */}
       <NavigationFooter
         onBack={onBack}
-        onContinue={onGenerate}
-        continueLabel="Generate My Snapshot"
-        continueDisabled={!consentGiven}
+        onContinue={handleGenerate}
+        continueLabel={isSubmitting ? 'Saving...' : 'Generate My Snapshot'}
+        continueDisabled={!consentGiven || isSubmitting}
       />
     </div>
   )

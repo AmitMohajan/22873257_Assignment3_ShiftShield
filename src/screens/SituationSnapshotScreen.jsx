@@ -100,9 +100,9 @@ function SituationSnapshotScreen({ workProfile, concern, situationDetails, onSta
           professional or your relevant workplace relations body.
         </p>
         <p style={{ marginTop: '0.75rem' }}>
-          Your information has not been stored or transmitted. All data remains
-          in your browser only and will be cleared when you start over or close
-          this page.
+          Your Work Profile and this submitted situation are stored in Supabase
+          and linked to your authenticated user account. Your Work Profile can be
+          restored when you sign in again.
         </p>
       </div>
 

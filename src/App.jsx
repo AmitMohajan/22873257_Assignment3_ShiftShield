@@ -17,23 +17,31 @@ const STEP_LABELS = [
   'Snapshot'
 ]
 
+// Default work profile shape (used for initial state and reset)
+const DEFAULT_WORK_PROFILE = {
+  fullName: '',
+  phoneNumber: '',
+  employmentType: '',
+  hoursPerWeek: '',
+  payBasis: '',
+  approximateRate: ''
+}
+
 function App() {
   // Current step (0 = Login, 1 = Work Profile, ... 5 = Snapshot)
   const [currentStep, setCurrentStep] = useState(0)
 
-  // Login data (demo only — not sent anywhere)
+  // Login data
   const [loginData, setLoginData] = useState({
     email: '',
     password: ''
   })
 
+  // Authentication token (stored in React state, cleared on logout/refresh)
+  const [accessToken, setAccessToken] = useState('')
+
   // Work profile data
-  const [workProfile, setWorkProfile] = useState({
-    employmentType: '',
-    hoursPerWeek: '',
-    payBasis: '',
-    approximateRate: ''
-  })
+  const [workProfile, setWorkProfile] = useState(DEFAULT_WORK_PROFILE)
 
   // Selected workplace concern (single string value)
   const [concern, setConcern] = useState('')
@@ -49,13 +57,20 @@ function App() {
   const goBack = () => setCurrentStep((prev) => Math.max(prev - 1, 0))
   const goToStep = (step) => setCurrentStep(step)
 
-  // Reset everything and return to login
+  // Handle successful login — store the access token and advance
+  const handleLogin = (token) => {
+    setAccessToken(token)
+    goNext()
+  }
+
+  // Reset everything and return to login (logout)
   const startOver = () => {
     setLoginData({ email: '', password: '' })
-    setWorkProfile({ employmentType: '', hoursPerWeek: '', payBasis: '', approximateRate: '' })
+    setWorkProfile(DEFAULT_WORK_PROFILE)
     setConcern('')
     setSituationDetails({})
     setConsentGiven(false)
+    setAccessToken('')
     setCurrentStep(0)
   }
 
@@ -67,7 +82,7 @@ function App() {
           <LoginScreen
             loginData={loginData}
             setLoginData={setLoginData}
-            onLogin={goNext}
+            onLogin={handleLogin}
           />
         )
       case 1:
@@ -77,6 +92,7 @@ function App() {
             setWorkProfile={setWorkProfile}
             onContinue={goNext}
             onBack={goBack}
+            accessToken={accessToken}
           />
         )
       case 2:
@@ -109,6 +125,7 @@ function App() {
             onGenerate={goNext}
             onBack={goBack}
             onEditStep={goToStep}
+            accessToken={accessToken}
           />
         )
       case 5:

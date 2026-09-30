@@ -1,43 +1,101 @@
 /**
- * WorkProfileScreen — Collects employment details
+ * WorkProfileScreen — Collects employment details with returning-user persistence
  *
  * Props received from App.jsx:
- *   workProfile    — { employmentType, hoursPerWeek, payBasis, approximateRate }
+ *   workProfile    — { fullName, phoneNumber, employmentType, hoursPerWeek, payBasis, approximateRate }
  *   setWorkProfile — Function to update workProfile
  *   onContinue     — Function to advance to the next screen
  *   onBack         — Function to go back to the previous screen
+ *   accessToken    — Supabase Auth JWT token for API calls
  */
 
-import { useState } from 'react'
-import { Briefcase, Info } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Briefcase } from 'lucide-react'
 import FormInput from '../components/FormInput'
 import FormSection from '../components/FormSection'
 import NavigationFooter from '../components/NavigationFooter'
 
-function WorkProfileScreen({ workProfile, setWorkProfile, onContinue, onBack }) {
+function WorkProfileScreen({ workProfile, setWorkProfile, onContinue, onBack, accessToken }) {
   const [errors, setErrors] = useState({})
+  const [saveError, setSaveError] = useState('')
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true)
+
+  // Fetch saved profile on mount (returning user)
+  useEffect(() => {
+    if (!accessToken) {
+      setIsLoadingProfile(false)
+      return
+    }
+
+    fetch('/api/profile', {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.profile) {
+          setWorkProfile({
+            fullName: data.profile.full_name || '',
+            phoneNumber: data.profile.phone_number || '',
+            employmentType: data.profile.employment_type || '',
+            hoursPerWeek: data.profile.hours_per_week || '',
+            payBasis: data.profile.pay_basis || '',
+            approximateRate: data.profile.approximate_rate || ''
+          })
+        }
+      })
+      .catch(() => {
+        // Profile fetch failed — continue with empty/default fields
+      })
+      .finally(() => {
+        setIsLoadingProfile(false)
+      })
+  }, [accessToken])
 
   // Update a field in workProfile
   const updateField = (field, value) => {
     setWorkProfile({ ...workProfile, [field]: value })
-    // Clear error for this field when user makes a change
     if (errors[field]) {
       setErrors({ ...errors, [field]: '' })
     }
   }
 
-  // Validate required fields before continuing
-  const handleContinue = () => {
+  // Validate required fields, save profile, then continue
+  const handleContinue = async () => {
     const newErrors = {}
+    if (!workProfile.fullName.trim()) newErrors.fullName = 'Please enter your full name.'
+    if (!workProfile.phoneNumber.trim()) newErrors.phoneNumber = 'Please enter your phone number.'
     if (!workProfile.employmentType) newErrors.employmentType = 'Please select your employment type.'
     if (!workProfile.hoursPerWeek) newErrors.hoursPerWeek = 'Please enter your average hours per week.'
     if (!workProfile.payBasis) newErrors.payBasis = 'Please select your pay basis.'
+    if (!workProfile.approximateRate) newErrors.approximateRate = 'Please enter your approximate rate.'
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
       return
     }
-    onContinue()
+
+    // Save profile to Supabase via backend
+    setSaveError('')
+
+    try {
+      const response = await fetch('/api/profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(workProfile)
+      })
+
+      if (!response.ok) {
+        setSaveError('Unable to save your profile. Please try again.')
+        return
+      }
+
+      onContinue()
+    } catch (err) {
+      setSaveError('Unable to save your profile. Please try again.')
+    }
   }
 
   return (
@@ -49,49 +107,70 @@ function WorkProfileScreen({ workProfile, setWorkProfile, onContinue, onBack }) 
         </div>
         <h1 className="screen-title">Your Work Profile</h1>
         <p className="screen-subtitle">
-          Tell us about your work situation. We only ask for information that helps
-          assess your concern. Nothing is stored permanently.
+          Please complete the details below. Fields marked with * are mandatory.
         </p>
       </div>
 
-      {/* Privacy notice */}
-      <div className="review-privacy-note" style={{ marginBottom: '1.5rem' }}>
-        <Info size={16} />
-        <span>
-          We do not ask for your name, address, date of birth, or employer details.
-          All information stays in your browser and is cleared when you close the page.
-        </span>
-      </div>
+      {/* Save error message */}
+      {saveError && (
+        <div className="login-error" style={{ marginBottom: '1rem' }}>
+          <span>{saveError}</span>
+        </div>
+      )}
+
+      {/* Personal Details section */}
+      <FormSection
+        title="Personal Details"
+        description="Basic profile details saved for your returning ShiftShield profile."
+      >
+        <FormInput
+          label="Full Name *"
+          type="text"
+          value={workProfile.fullName}
+          onChange={(val) => updateField('fullName', val)}
+          placeholder="e.g. Alex Chen"
+          helperText="Enter your full name."
+          error={errors.fullName}
+          disabled={isLoadingProfile}
+        />
+
+        <FormInput
+          label="Phone Number *"
+          type="text"
+          value={workProfile.phoneNumber}
+          onChange={(val) => updateField('phoneNumber', val)}
+          placeholder="e.g. 0412 345 678"
+          helperText="Enter your phone number."
+          error={errors.phoneNumber}
+          disabled={isLoadingProfile}
+        />
+      </FormSection>
 
       {/* Employment Details section */}
-      {/*
-        PARENT-TO-CHILD PROPS:
-        FormSection receives title, description, and children as props.
-        FormInput receives label, type, value, onChange, options, helperText, and error.
-        This demonstrates props flowing from WorkProfileScreen → FormSection/FormInput.
-      */}
       <FormSection
         title="Employment Details"
         description="This helps us understand which workplace rules may be most relevant to your situation."
       >
         <FormInput
-          label="Employment Type"
+          label="Employment Type *"
           type="select"
           value={workProfile.employmentType}
           onChange={(val) => updateField('employmentType', val)}
           options={['Casual', 'Part-time', 'Full-time', 'Fixed-term', 'Contractor/Other']}
           helperText="Your employment type can affect your workplace rights and entitlements."
           error={errors.employmentType}
+          disabled={isLoadingProfile}
         />
 
         <FormInput
-          label="Average Hours Per Week"
+          label="Approx. Hours per Week *"
           type="number"
           value={workProfile.hoursPerWeek}
           onChange={(val) => updateField('hoursPerWeek', val)}
           placeholder="e.g. 20"
           helperText="An approximate number is fine. Standard full-time is usually around 38 hours."
           error={errors.hoursPerWeek}
+          disabled={isLoadingProfile}
         />
       </FormSection>
 
@@ -101,22 +180,25 @@ function WorkProfileScreen({ workProfile, setWorkProfile, onContinue, onBack }) 
         description="Understanding how you are paid helps us provide a more relevant assessment."
       >
         <FormInput
-          label="Pay Basis"
+          label="Pay Basis *"
           type="select"
           value={workProfile.payBasis}
           onChange={(val) => updateField('payBasis', val)}
           options={['Hourly', 'Salary', 'Piece rate', 'Commission', 'Unsure']}
           helperText="This is how your pay is calculated. If you're unsure, select 'Unsure'."
           error={errors.payBasis}
+          disabled={isLoadingProfile}
         />
 
         <FormInput
-          label="Approximate Hourly Rate or Salary (optional)"
+          label="Approximate Rate *"
           type="number"
           value={workProfile.approximateRate}
           onChange={(val) => updateField('approximateRate', val)}
           placeholder="e.g. 25.00"
-          helperText="This field is completely optional. An approximate figure is fine."
+          helperText="Enter your approximate hourly rate or salary."
+          error={errors.approximateRate}
+          disabled={isLoadingProfile}
         />
       </FormSection>
 
