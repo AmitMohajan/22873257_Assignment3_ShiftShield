@@ -5,6 +5,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from supabase import create_client
 from datetime import datetime, timezone
+import hashlib
+import re
 import os
 
 # ----------------------------------------------------------
@@ -35,6 +37,21 @@ auth_client = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)  # All Auth opera
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests during local development
+
+
+# ── Email Mapping ──────────────────────────────────────────
+AUTH_DOMAIN = "shiftshield-navigator.vercel.app"
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _to_auth_email(email):
+    """Map a reviewer's email to a Supabase-safe internal auth email.
+    Returns the internal email string, or None if the input is not a valid email."""
+    normalised = email.strip().lower()
+    if not _EMAIL_RE.match(normalised):
+        return None
+    digest = hashlib.sha256(normalised.encode("utf-8")).hexdigest()[:32]
+    return f"user-{digest}@{AUTH_DOMAIN}"
 
 
 # ── Token Verification Helper ─────────────────────────────
@@ -72,9 +89,32 @@ def login():
     if not data or not data.get("email") or not data.get("password"):
         return jsonify({"error": "Email and password are required."}), 400
 
+    auth_email = _to_auth_email(data["email"])
+    if not auth_email:
+        return jsonify({"error": "Please enter a valid email address."}), 400
+
+    # Primary: try the mapped internal email
     try:
         result = auth_client.auth.sign_in_with_password({
-            "email": data["email"],
+            "email": auth_email,
+            "password": data["password"]
+        })
+        return jsonify({
+            "accessToken": result.session.access_token
+        })
+    except Exception as e:
+        error_msg = str(e).lower()
+        # Only fallback for authentication failures — not server/network errors
+        if not ("invalid" in error_msg or "credentials" in error_msg or "not found" in error_msg):
+            print(f"[Auth error on login] {e}")
+            return jsonify({"error": "Login failed. Please try again."}), 500
+
+    # Backward compatibility: try the original normalised email
+    # (for test users created before email mapping was added)
+    try:
+        original_email = data["email"].strip().lower()
+        result = auth_client.auth.sign_in_with_password({
+            "email": original_email,
             "password": data["password"]
         })
         return jsonify({
@@ -86,6 +126,53 @@ def login():
             return jsonify({"error": "Invalid email or password."}), 401
         print(f"[Auth error on login] {e}")
         return jsonify({"error": "Login failed. Please try again."}), 500
+
+
+# ── Register (Supabase Auth) ──────────────────────────────
+@app.route("/api/register", methods=["POST"])
+def register():
+    """
+    Creates a new user via Supabase Auth.
+    Expects JSON body: { "email": "...", "password": "..." }
+    Returns accessToken if session is created, or a confirmation message.
+    """
+    data = request.get_json(silent=True)
+
+    if not data or not data.get("email") or not data.get("password"):
+        return jsonify({"error": "Email and password are required."}), 400
+
+    if len(data["password"]) < 6:
+        return jsonify({"error": "Password must be at least 6 characters."}), 400
+
+    auth_email = _to_auth_email(data["email"])
+    if not auth_email:
+        return jsonify({"error": "Please enter a valid email address."}), 400
+
+    try:
+        # Create user via Admin API with email already confirmed
+        auth_client.auth.admin.create_user({
+            "email": auth_email,
+            "password": data["password"],
+            "email_confirm": True
+        })
+
+        # Sign the new user in to obtain an access token
+        sign_in = auth_client.auth.sign_in_with_password({
+            "email": auth_email,
+            "password": data["password"]
+        })
+
+        return jsonify({
+            "accessToken": sign_in.session.access_token,
+            "message": "Account created successfully."
+        })
+
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "already" in error_msg or "registered" in error_msg or "exists" in error_msg:
+            return jsonify({"error": "This email is already registered. Please sign in."}), 409
+        print(f"[Auth error on register] {e}")
+        return jsonify({"error": "Registration failed. Please try again."}), 500
 
 
 # ── Get User Profile ──────────────────────────────────────
