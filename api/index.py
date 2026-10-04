@@ -30,10 +30,13 @@ if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
         "Set them in your .env file (local) or Vercel environment variables (production)."
     )
 
-# Two separate clients to prevent sign_in_with_password() from
-# mutating the database client's auth context.
-db = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)          # Database operations only
-auth_client = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)  # All Auth operations
+# Three separate clients to isolate authorization contexts.
+# admin_client:  admin.create_user + get_user (always retains service-role JWT)
+# sign_in_client: sign_in_with_password only (session may be mutated safely)
+# db:            database table operations only
+db = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
+admin_client = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
+sign_in_client = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests during local development
