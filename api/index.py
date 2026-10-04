@@ -23,19 +23,20 @@ import os
 # Read credentials from environment (loaded from .env locally, Vercel dashboard in production)
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+if not SUPABASE_URL or not SUPABASE_SECRET_KEY or not SUPABASE_SERVICE_ROLE_KEY:
     raise RuntimeError(
-        "Missing SUPABASE_URL or SUPABASE_SECRET_KEY. "
+        "Missing SUPABASE_URL, SUPABASE_SECRET_KEY, or SUPABASE_SERVICE_ROLE_KEY. "
         "Set them in your .env file (local) or Vercel environment variables (production)."
     )
 
 # Three separate clients to isolate authorization contexts.
-# admin_client:  admin.create_user + get_user (always retains service-role JWT)
-# sign_in_client: sign_in_with_password only (session may be mutated safely)
-# db:            database table operations only
+# verify_client:   get_user() for token verification only (never mutated)
+# sign_in_client:  sign_in_with_password only (session may be mutated safely)
+# db:              database table operations only
 db = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
-admin_client = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
+verify_client = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
 sign_in_client = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
 
 app = Flask(__name__)
@@ -66,7 +67,7 @@ def _verify_token():
         return None, (jsonify({"error": "Missing authorization token."}), 401)
     token = auth_header[7:]
     try:
-        user = auth_client.auth.get_user(token)
+        user = verify_client.auth.get_user(token)
         return user.user.id, None
     except Exception:
         return None, (jsonify({"error": "Invalid or expired token."}), 401)
@@ -98,7 +99,7 @@ def login():
 
     # Primary: try the mapped internal email
     try:
-        result = auth_client.auth.sign_in_with_password({
+        result = sign_in_client.auth.sign_in_with_password({
             "email": auth_email,
             "password": data["password"]
         })
@@ -116,7 +117,7 @@ def login():
     # (for test users created before email mapping was added)
     try:
         original_email = data["email"].strip().lower()
-        result = auth_client.auth.sign_in_with_password({
+        result = sign_in_client.auth.sign_in_with_password({
             "email": original_email,
             "password": data["password"]
         })
@@ -152,15 +153,16 @@ def register():
         return jsonify({"error": "Please enter a valid email address."}), 400
 
     try:
-        # Create user via Admin API with email already confirmed
-        auth_client.auth.admin.create_user({
+        # Fresh client — guaranteed uncontaminated service-role JWT
+        fresh_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        fresh_admin.auth.admin.create_user({
             "email": auth_email,
             "password": data["password"],
             "email_confirm": True
         })
 
         # Sign the new user in to obtain an access token
-        sign_in = auth_client.auth.sign_in_with_password({
+        sign_in = sign_in_client.auth.sign_in_with_password({
             "email": auth_email,
             "password": data["password"]
         })
