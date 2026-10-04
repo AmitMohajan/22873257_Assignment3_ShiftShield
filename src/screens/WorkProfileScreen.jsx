@@ -15,6 +15,16 @@ import FormInput from '../components/FormInput'
 import FormSection from '../components/FormSection'
 import NavigationFooter from '../components/NavigationFooter'
 
+// Blank profile shape used to explicitly clear stale user data
+const BLANK_WORK_PROFILE = {
+  fullName: '',
+  phoneNumber: '',
+  employmentType: '',
+  hoursPerWeek: '',
+  payBasis: '',
+  approximateRate: ''
+}
+
 function WorkProfileScreen({ workProfile, setWorkProfile, onContinue, onBack, accessToken }) {
   const [errors, setErrors] = useState({})
   const [saveError, setSaveError] = useState('')
@@ -41,10 +51,14 @@ function WorkProfileScreen({ workProfile, setWorkProfile, onContinue, onBack, ac
             payBasis: data.profile.pay_basis || '',
             approximateRate: data.profile.approximate_rate || ''
           })
+        } else {
+          // No saved profile — explicitly reset so stale data is not shown
+          setWorkProfile(BLANK_WORK_PROFILE)
         }
       })
       .catch(() => {
-        // Profile fetch failed — continue with empty/default fields
+        // Profile fetch failed — reset to blank so stale data is not shown
+        setWorkProfile(BLANK_WORK_PROFILE)
       })
       .finally(() => {
         setIsLoadingProfile(false)

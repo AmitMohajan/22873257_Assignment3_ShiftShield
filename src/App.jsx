@@ -60,6 +60,7 @@ function App() {
   // Handle successful login — store the access token and advance
   const handleLogin = (token) => {
     setAccessToken(token)
+    setWorkProfile(DEFAULT_WORK_PROFILE)
     goNext()
   }
 

@@ -13,17 +13,34 @@ import FormInput from '../components/FormInput'
 import ActionButton from '../components/ActionButton'
 
 function LoginScreen({ loginData, setLoginData, onLogin }) {
-  // Local error state for validation messages
+  // Local state
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [view, setView] = useState('signIn')
+  const [confirmPassword, setConfirmPassword] = useState('')
 
   // Update a field in loginData
   const updateField = (field, value) => {
     setLoginData({ ...loginData, [field]: value })
-    // Clear messages when user starts typing
     if (error) setError('')
     if (successMessage) setSuccessMessage('')
+  }
+
+  // Switch to Create Account view
+  const goToCreateAccount = () => {
+    setView('createAccount')
+    setError('')
+    setSuccessMessage('')
+    setConfirmPassword('')
+  }
+
+  // Switch back to Sign In view
+  const goToSignIn = () => {
+    setView('signIn')
+    setError('')
+    setSuccessMessage('')
+    setConfirmPassword('')
   }
 
   // Validate and attempt login
@@ -56,22 +73,26 @@ function LoginScreen({ loginData, setLoginData, onLogin }) {
       }
 
       const data = await response.json()
-      onLogin(data.accessToken)  // Pass token to App.jsx
+      onLogin(data.accessToken)
     } catch (err) {
-      setError('Invalid email or password. Please try again.')
+      setError('Unable to sign in. If you have not created an account yet, select Create Account. If you already have an account, check your email and password.')
     } finally {
       setIsLoading(false)
     }
   }
 
-  // Validate and attempt registration
-  const handleRegister = async () => {
+  // Validate and create account
+  const handleCreate = async () => {
     if (!loginData.email.includes('@')) {
       setError('Please enter a valid email address.')
       return
     }
     if (loginData.password.length < 6) {
       setError('Password must be at least 6 characters.')
+      return
+    }
+    if (loginData.password !== confirmPassword) {
+      setError('Passwords do not match.')
       return
     }
 
@@ -92,7 +113,11 @@ function LoginScreen({ loginData, setLoginData, onLogin }) {
       const data = await response.json()
 
       if (!response.ok) {
-        setError(data.error || 'Registration failed. Please try again.')
+        if (response.status === 409) {
+          setError('An account already exists for this email. Please sign in.')
+        } else {
+          setError(data.error || 'Registration failed. Please try again.')
+        }
         return
       }
 
@@ -108,9 +133,12 @@ function LoginScreen({ loginData, setLoginData, onLogin }) {
     }
   }
 
-  // Allow pressing Enter to submit
+  // Enter key handler
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !isLoading) handleLogin()
+    if (e.key === 'Enter' && !isLoading) {
+      if (view === 'signIn') handleLogin()
+      else handleCreate()
+    }
   }
 
   return (
@@ -146,44 +174,97 @@ function LoginScreen({ loginData, setLoginData, onLogin }) {
           </div>
         )}
 
-        {/* Form fields using FormInput component */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <FormInput
-            label="Email address"
-            type="email"
-            value={loginData.email}
-            onChange={(val) => updateField('email', val)}
-            placeholder="your.email@example.com"
-            helperText="Enter your email address."
-            disabled={isLoading}
-          />
+        {/* Sign In view */}
+        {view === 'signIn' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <FormInput
+              label="Email address"
+              type="email"
+              value={loginData.email}
+              onChange={(val) => updateField('email', val)}
+              placeholder="your.email@example.com"
+              helperText="Enter your email address."
+              disabled={isLoading}
+            />
 
-          <FormInput
-            label="Password"
-            type="password"
-            value={loginData.password}
-            onChange={(val) => updateField('password', val)}
-            placeholder="Enter your password"
-            helperText="Minimum 6 characters."
-            disabled={isLoading}
-          />
+            <FormInput
+              label="Password"
+              type="password"
+              value={loginData.password}
+              onChange={(val) => updateField('password', val)}
+              placeholder="Enter your password"
+              helperText="Minimum 6 characters."
+              disabled={isLoading}
+            />
 
-          <ActionButton
-            label={isLoading ? 'Signing in...' : 'Sign In'}
-            variant="primary"
-            onClick={handleLogin}
-            fullWidth
-            disabled={isLoading}
-          />
+            <ActionButton
+              label={isLoading ? 'Signing in...' : 'Sign In'}
+              variant="primary"
+              onClick={handleLogin}
+              fullWidth
+              disabled={isLoading}
+            />
 
-          <ActionButton
-            label={isLoading ? 'Creating account...' : 'Create Account'}
-            variant="secondary"
-            onClick={handleRegister}
-            fullWidth
-            disabled={isLoading}
-          />
-        </div>
+            <ActionButton
+              label="Create Account"
+              variant="secondary"
+              onClick={goToCreateAccount}
+              fullWidth
+              disabled={isLoading}
+            />
+          </div>
+        )}
+
+        {/* Create Account view */}
+        {view === 'createAccount' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <FormInput
+              label="Email address"
+              type="email"
+              value={loginData.email}
+              onChange={(val) => updateField('email', val)}
+              placeholder="your.email@example.com"
+              helperText="Enter your email address."
+              disabled={isLoading}
+            />
+
+            <FormInput
+              label="Password"
+              type="password"
+              value={loginData.password}
+              onChange={(val) => updateField('password', val)}
+              placeholder="Enter your password"
+              helperText="Minimum 6 characters."
+              disabled={isLoading}
+            />
+
+            <FormInput
+              label="Confirm Password"
+              type="password"
+              value={confirmPassword}
+              onChange={(val) => setConfirmPassword(val)}
+              placeholder="Re-enter your password"
+              helperText="Must match the password above."
+              disabled={isLoading}
+            />
+
+            <ActionButton
+              label={isLoading ? 'Creating account...' : 'Create'}
+              variant="primary"
+              onClick={handleCreate}
+              fullWidth
+              disabled={isLoading}
+            />
+
+            <ActionButton
+              label="Back to Sign In"
+              variant="secondary"
+              onClick={goToSignIn}
+              fullWidth
+              disabled={isLoading}
+            />
+          </div>
+        )}
       </div>
     </div>
   )
